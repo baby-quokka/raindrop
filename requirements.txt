@@ -1,0 +1,90 @@
+# PyTorch (CUDA 11.3)
+# --extra-index-url https://download.pytorch.org/whl/cu113
+# torch==1.12.1+cu113
+# torchaudio==0.12.1+cu113
+# torchvision==0.13.1+cu113
+
+# Core ML packages
+# accelerate==0.20.3
+# diffusers==0.21.0  # RectifiedFlow는 FlowMatchEulerDiscreteScheduler 필요 → diffusers>=0.32
+diffusers>=0.32.0
+# einops==0.6.1
+timm==0.9.7
+
+# Image processing
+# opencv-python==4.8.1.78
+# pillow==12.1.0
+scikit-image==0.21.0
+ImageIO==2.37.2
+tifffile==2025.5.10
+PyWavelets==1.8.0
+
+# Metrics
+lpips==0.1.4
+pytorch-msssim==1.0.0
+
+# Utilities
+# numpy==1.26.4
+# scipy==1.11.4
+# tqdm==4.66.1
+PyYAML==6.0.3
+packaging==25.0
+psutil==7.2.2
+setproctitle==1.3.7
+
+# Hugging Face (transformers 4.35는 huggingface-hub <1.0 필요)
+huggingface-hub>=0.16.4,<1.0
+safetensors==0.7.0
+transformers==4.35.0
+tokenizers==0.14.1
+hf-xet==1.2.0
+
+# HTTP/Network
+httpx==0.28.1
+httpcore==1.0.9
+h11==0.16.0
+requests==2.32.5
+urllib3==2.6.3
+certifi==2026.1.4
+idna==3.11
+charset-normalizer==3.4.4
+
+# Async/Concurrency
+anyio==4.12.1
+exceptiongroup==1.3.1
+
+# File handling
+fsspec==2026.1.0
+filelock==3.20.3
+lazy_loader==0.4
+
+# Git
+GitPython==3.1.46
+gitdb==4.0.12
+smmap==5.0.2
+
+# CLI
+click==8.3.1
+typer-slim==0.21.1
+shellingham==1.5.4
+
+# Docker
+docker-pycreds==0.4.0
+
+# Logging/Monitoring
+wandb==0.16.6
+sentry-sdk==2.51.0
+
+# Data structures
+networkx==3.4.2
+protobuf==4.25.8
+
+# System
+appdirs==1.4.4
+importlib_metadata==8.7.1
+typing_extensions==4.15.0
+six==1.17.0
+zipp==3.23.0
+regex==2026.1.15
+# setuptools==80.10.1
+# wheel==0.46.3
