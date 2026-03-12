@@ -51,7 +51,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Directories
-    parser.add_argument('--model_name', default='Restormer', type=str)
+    parser.add_argument('--model_name', default='ConvIR_large', type=str)
     parser.add_argument('--train_data', type=str, default='RaindropClarity')
     parser.add_argument('--test_data', type=str, default='RaindropClarity')
     parser.add_argument('--exp_suffix', type=str, default=None, help='Experiment suffix for results folder, e.g. 05, 02, ema, 05ema → model-05-RaindropClarity-...')

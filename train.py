@@ -89,51 +89,6 @@ def compute_fft_loss(pred, target):
     return loss
 
 
-def get_semantic_labels(input_img, label_img=None):
-    """
-    이미지 특성으로부터 semantic label을 자동 생성
-    
-    Semantic Classes:
-    - 0: night_bg_focus
-    - 1: night_raindrop_focus  
-    - 2: day_bg_focus
-    - 3: day_raindrop_focus
-    
-    Args:
-        input_img: [B, 3, H, W] 입력 이미지 (range [0, 1])
-        label_img: [B, 3, H, W] 정답 이미지 (optional, raindrop 영역 추정에 사용)
-    
-    Returns:
-        [B] semantic class labels (0-3)
-    """
-    B = input_img.shape[0]
-    device = input_img.device
-    
-    # RGB to grayscale (luminance)
-    # Y = 0.299*R + 0.587*G + 0.114*B
-    gray = 0.299 * input_img[:, 0] + 0.587 * input_img[:, 1] + 0.114 * input_img[:, 2]  # [B, H, W]
-    
-    # 평균 밝기로 day/night 판단 (threshold: 0.3)
-    mean_brightness = gray.mean(dim=(1, 2))  # [B]
-    is_day = (mean_brightness > 0.3).long()  # 0: night, 1: day
-    
-    # Raindrop 영역 추정: 입력과 정답의 차이로 raindrop 영역 추정
-    if label_img is not None:
-        # 차이의 크기로 raindrop 영역 추정
-        diff = torch.abs(input_img - label_img).mean(dim=1)  # [B, H, W]
-        raindrop_ratio = (diff > 0.1).float().mean(dim=(1, 2))  # [B]
-        # raindrop이 많으면 raindrop_focus (threshold: 0.05)
-        is_raindrop_focus = (raindrop_ratio > 0.05).long()
-    else:
-        # 정답이 없으면 밝기 분산으로 추정 (raindrop이 있으면 분산이 클 수 있음)
-        brightness_std = gray.std(dim=(1, 2))  # [B]
-        is_raindrop_focus = (brightness_std > 0.15).long()
-    
-    # Semantic label 계산: is_day * 2 + is_raindrop_focus
-    semantic_labels = is_day * 2 + is_raindrop_focus  # [B]
-    
-    return semantic_labels.to(device)
-
 def _train(model, accelerator, args):
     device = accelerator.device
     use_wandb = getattr(args, 'use_wandb', False)
@@ -217,21 +172,14 @@ def _train(model, accelerator, args):
     model, dataloader = accelerator.prepare(model, dataloader)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.learning_rate)
-    # ===== [STEP-CUSTOM LR SCHEDULE] get_scheduler 래핑 시작 =====
-    scheduler_name = args.lr_scheduler
-    if scheduler_name == "step_custom":
-        # diffusers.get_scheduler는 "step_custom"을 모르는 이름이므로,
-        # checkpoint 호환을 위해 내부적으로는 "constant" 스케줄러만 생성해 둔다.
-        scheduler_name = "constant"
     scheduler = get_scheduler(
-        # args.lr_scheduler, optimizer=optimizer,
-        scheduler_name, optimizer=optimizer,  # 이걸로 교체됨
+        args.lr_scheduler,
+        optimizer=optimizer,
         num_warmup_steps=args.lr_warmup_steps, 
         num_training_steps=args.num_iter,
         num_cycles=args.lr_num_cycles,
         power=args.lr_power
     )
-    # ===== [STEP-CUSTOM LR SCHEDULE] get_scheduler 래핑 끝 =====
 
     # EMA (Exponential Moving Average): valid/save 시 EMA 가중치 사용
     use_ema = getattr(args, 'use_ema', False)
@@ -283,12 +231,7 @@ def _train(model, accelerator, args):
 
         with accelerator.accumulate(model):
             with accelerator.autocast():
-                # STRRNet의 경우 semantic label 생성 및 전달
-                if hasattr(model, 'use_semantic_guidance') and model.use_semantic_guidance:
-                    semantic_labels = get_semantic_labels(input_img, label_img)
-                    pred_img = model(input_img, semantic_labels=semantic_labels)
-                else:
-                    pred_img = model(input_img)
+                pred_img = model(input_img)
                 
                 # 모델이 multi-scale 리스트를 반환하는 경우 처리
                 if isinstance(pred_img, (list, tuple)):
@@ -368,24 +311,7 @@ def _train(model, accelerator, args):
                           f"L1={l1_v}, LPIPS={lp_v}, MS-SSIM={msssim_loss.item():.4f}, FFT={fft_loss.item():.4f} (skipping update, advancing step)")
                 optimizer.zero_grad(set_to_none=True)
                 # NaN이어도 iter/scheduler는 무조건 진행시켜서 같은 iter에서 무한 반복 방지
-                # ===== [STEP-CUSTOM LR SCHEDULE] NaN 스텝 처리 시작 =====
-                # scheduler.step()  # 원래 이거
-                if args.lr_scheduler == "step_custom":
-                    # step_custom일 때도 iter는 진행시키고, LR 스케줄만 수동으로 업데이트
-                    base_lr = args.learning_rate
-                    warmup_iters = 10_000
-                    decay_start = 120_000
-                    if global_iter < warmup_iters:
-                        lr = base_lr * float(global_iter) / float(max(1, warmup_iters))
-                    elif global_iter < decay_start:
-                        lr = base_lr
-                    else:
-                        lr = base_lr * 0.5
-                    for g in optimizer.param_groups:
-                        g["lr"] = lr
-                else:
-                    scheduler.step()
-                # ===== [STEP-CUSTOM LR SCHEDULE] NaN 스텝 처리 끝 =====
+                scheduler.step()
                 global_iter += 1
                 if accelerator.is_main_process:
                     pbar.update(1)
@@ -438,20 +364,6 @@ def _train(model, accelerator, args):
 
             if accelerator.sync_gradients:    
                 accelerator.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-                # ===== [STEP-CUSTOM LR SCHEDULE] 메인 스텝 LR 업데이트 시작 =====
-                if args.lr_scheduler == "step_custom":
-                    base_lr = args.learning_rate
-                    warmup_iters = 10_000
-                    decay_start = 120_000
-                    if global_iter < warmup_iters:
-                        lr = base_lr * float(global_iter) / float(max(1, warmup_iters))
-                    elif global_iter < decay_start:
-                        lr = base_lr
-                    else:
-                        lr = base_lr * 0.5
-                    for g in optimizer.param_groups:
-                        g["lr"] = lr
-                # ===== [STEP-CUSTOM LR SCHEDULE] 메인 스텝 LR 업데이트 끝 =====
                 optimizer.step()
                 optimizer.zero_grad()
 
@@ -465,11 +377,7 @@ def _train(model, accelerator, args):
                             else:
                                 ema_state[k].copy_(v)
                                 
-                # ===== [STEP-CUSTOM LR SCHEDULE] 메인 스텝 LR 업데이트 시작 =====
-                # schedular.step()  # 원래 이거
-                if args.lr_scheduler != "step_custom":
-                    scheduler.step()
-                # ===== [STEP-CUSTOM LR SCHEDULE] 메인 스텝 LR 업데이트 끝 =====
+                scheduler.step()
                 global_iter += 1
                 if accelerator.is_main_process:
                     pbar.update(1)
