@@ -104,10 +104,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     print(args)
 
-    args.mode = 'train'
-    main(args)
-
-    args.mode = 'test'
-    #args.exp_name = 'Restormer-NH-HAZE-0620-1530'  # specify the trained model name
-    args.test_model = f'results/{args.exp_name}/ckpt/Final.pkl'
-    main(args)
+    # 명령줄 인자로 받은 mode에 따라 한 가지만 실행
+    if args.mode == 'train':
+        main(args)
+    elif args.mode == 'test':
+        main(args)
